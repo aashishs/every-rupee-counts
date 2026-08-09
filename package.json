@@ -1,0 +1,19 @@
+{
+  "name": "every-rupee-counts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Every Rupee Counts – Personal Finance Tracker (React PWA + Express + Postgres)",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "db:migrate": "npm run db:migrate --prefix server",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.4"
+  }
+}

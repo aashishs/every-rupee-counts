@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink: #14201c;
+  --color-ink-muted: #4a5c55;
+  --color-paper: #f3f6f4;
+  --color-paper-elevated: #ffffff;
+  --color-brand: #0f5c4c;
+  --color-brand-soft: #d8ebe4;
+  --color-accent: #c46b2b;
+  --color-danger: #b42318;
+  --color-success: #1b7a4e;
+  --color-border: #d5e0db;
+  --color-chart-1: #0f5c4c;
+  --color-chart-2: #c46b2b;
+  --color-chart-3: #2f6fed;
+  --color-chart-4: #8b5e3c;
+  --color-chart-5: #5b7c6a;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --color-ink: #e8f0ec;
+    --color-ink-muted: #9db0a8;
+    --color-paper: #0f1613;
+    --color-paper-elevated: #17211c;
+    --color-brand: #3d9b82;
+    --color-brand-soft: #1a3029;
+    --color-accent: #e08a45;
+    --color-danger: #f97066;
+    --color-success: #3dd68c;
+    --color-border: #2a3a33;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, color-mix(in oklab, var(--color-brand) 18%, transparent), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, color-mix(in oklab, var(--color-accent) 12%, transparent), transparent 55%),
+      linear-gradient(180deg, color-mix(in oklab, var(--color-paper) 92%, #dfeae4), var(--color-paper));
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .glass-panel {
+    background: color-mix(in oklab, var(--color-paper-elevated) 88%, transparent);
+    border: 1px solid var(--color-border);
+    backdrop-filter: blur(10px);
+  }
+
+  .animate-rise {
+    animation: rise 0.55s ease both;
+  }
+
+  .animate-fade {
+    animation: fade 0.4s ease both;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
