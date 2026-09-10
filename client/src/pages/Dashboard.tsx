@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Area,
   AreaChart,
@@ -32,6 +33,9 @@ interface DashboardData {
     netWorth: number;
     financialHealthScore: number;
     accountBalance: number;
+    emailHoldings?: number;
+    importedTrades?: number;
+    importJobsThisMonth?: number;
   };
   expenseByCategory: { category: string; total: string }[];
   cashFlowTrend: { period: string; income: number; expense: number; net: number }[];
@@ -51,6 +55,26 @@ interface DashboardData {
     date: string;
     description?: string;
   }>;
+  recentInvestmentTrades?: Array<{
+    id: string;
+    trade_date: string;
+    side: string;
+    asset_type: string;
+    name: string;
+    symbol?: string;
+    amount: string | number;
+    broker?: string;
+  }>;
+  investmentAllocation?: Array<{
+    type: string;
+    current: number;
+    invested: number;
+  }>;
+  mailImport?: {
+    importedJobs: number;
+    tradesImported: number;
+    jobsThisMonth: number;
+  };
 }
 
 export function DashboardPage() {
@@ -82,12 +106,23 @@ export function DashboardPage() {
     name: c.category,
     value: Number(c.total),
   }));
+  const allocData = (data.investmentAllocation || [])
+    .filter((a) => a.current > 0)
+    .map((a) => ({ name: a.type, value: a.current }));
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
         subtitle="A clear snapshot of income, spend, investments, and health."
+        actions={
+          <Link
+            to="/mail-import"
+            className="rounded-xl bg-[var(--color-brand-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--color-brand)]"
+          >
+            Import from mail
+          </Link>
+        }
       />
 
       <div className="mb-4 flex items-center gap-3">
@@ -111,6 +146,24 @@ export function DashboardPage() {
         <Stat label="Assets" value={formatINR(o.totalAssets)} />
         <Stat label="Net worth" value={formatINR(o.netWorth)} />
         <Stat label="Cash flow" value={formatINR(o.cashFlow)} tone={o.cashFlow >= 0 ? 'positive' : 'negative'} />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <Stat
+          label="Mail-imported trades"
+          value={String(o.importedTrades || data.mailImport?.tradesImported || 0)}
+          hint={`${o.emailHoldings || 0} holdings from email`}
+        />
+        <Stat
+          label="Imports this month"
+          value={String(o.importJobsThisMonth || data.mailImport?.jobsThisMonth || 0)}
+          hint={`${data.mailImport?.importedJobs || 0} successful jobs total`}
+        />
+        <Stat
+          label="Invested capital"
+          value={formatINR(o.investedAmount)}
+          hint="Cost basis across portfolio"
+        />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-5">
@@ -142,13 +195,22 @@ export function DashboardPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <h2 className="mb-4 font-display text-lg font-semibold">Expense mix</h2>
-          {pieData.length ? (
+          <h2 className="mb-4 font-display text-lg font-semibold">
+            {allocData.length ? 'Portfolio mix' : 'Expense mix'}
+          </h2>
+          {(allocData.length ? allocData : pieData).length ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
-                    {pieData.map((_, i) => (
+                  <Pie
+                    data={allocData.length ? allocData : pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={55}
+                    outerRadius={90}
+                    paddingAngle={2}
+                  >
+                    {(allocData.length ? allocData : pieData).map((_, i) => (
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
@@ -188,9 +250,28 @@ export function DashboardPage() {
         </Card>
 
         <Card>
-          <h2 className="mb-3 font-display text-lg font-semibold">Upcoming recurring</h2>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="font-display text-lg font-semibold">Broker / MF imports</h2>
+            <Link to="/mail-import" className="text-sm font-medium text-[var(--color-brand)]">
+              Manage
+            </Link>
+          </div>
           <div className="space-y-3">
-            {data.upcomingPayments.length ? (
+            {data.recentInvestmentTrades?.length ? (
+              data.recentInvestmentTrades.map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3 last:border-0">
+                  <div>
+                    <p className="font-medium">{t.name}</p>
+                    <p className="text-xs text-[var(--color-ink-muted)]">
+                      {t.side.toUpperCase()} · {t.asset_type.replace('_', ' ')} ·{' '}
+                      {format(new Date(t.trade_date), 'dd MMM yyyy')}
+                      {t.broker ? ` · ${t.broker}` : ''}
+                    </p>
+                  </div>
+                  <p className="font-semibold">{formatINR(t.amount)}</p>
+                </div>
+              ))
+            ) : data.upcomingPayments.length ? (
               data.upcomingPayments.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3 last:border-0">
                   <div>
@@ -201,7 +282,10 @@ export function DashboardPage() {
                 </div>
               ))
             ) : (
-              <EmptyState title="Nothing due soon" body="Recurring bills due in the next 2 weeks show up here." />
+              <EmptyState
+                title="No imported trades yet"
+                body="Connect Gmail or upload a contract note / CAS from Mail import."
+              />
             )}
           </div>
         </Card>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { api } from '../lib/api';
 import { INVESTMENT_TYPES } from '../lib/constants';
@@ -15,6 +16,10 @@ interface Investment {
   purchase_date?: string;
   notes?: string;
   client_id?: string;
+  units?: number | string;
+  symbol?: string;
+  broker?: string;
+  source?: string;
 }
 
 const COLORS = ['#0f5c4c', '#c46b2b', '#2f6fed', '#8b5e3c', '#5b7c6a', '#b42318'];
@@ -124,17 +129,25 @@ export function InvestmentsPage() {
     <div>
       <PageHeader
         title="Investments"
-        subtitle="Track portfolio value, returns, and allocation."
+        subtitle="Track portfolio value, returns, and allocation — including holdings imported from mail."
         actions={
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setForm(empty);
-              setOpen(true);
-            }}
-          >
-            Add investment
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to="/mail-import"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-brand-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--color-brand)]"
+            >
+              Import from mail
+            </Link>
+            <Button
+              onClick={() => {
+                setEditing(null);
+                setForm(empty);
+                setOpen(true);
+              }}
+            >
+              Add investment
+            </Button>
+          </div>
         }
       />
 
@@ -189,6 +202,9 @@ export function InvestmentsPage() {
                     <p className="font-semibold">{inv.name}</p>
                     <div className="mt-1 flex flex-wrap gap-2">
                       <Badge>{inv.type}</Badge>
+                      {inv.source === 'email' ? <Badge tone="warn">From mail</Badge> : null}
+                      {inv.broker ? <Badge tone="neutral">{inv.broker}</Badge> : null}
+                      {Number(inv.units) > 0 ? <Badge tone="neutral">{Number(inv.units).toFixed(3)} units</Badge> : null}
                       <Badge tone={gain >= 0 ? 'success' : 'danger'}>
                         {formatINR(gain)} · {pct(ret)}
                       </Badge>

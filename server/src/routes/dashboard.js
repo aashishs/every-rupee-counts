@@ -22,8 +22,19 @@ router.get(
     const { start, end } = monthBounds(0);
     const userId = req.user.id;
 
-    const [incomeRes, expenseRes, investRes, assetRes, recentRes, recurringRes, budgetsRes, cashflowRes] =
-      await Promise.all([
+    const [
+      incomeRes,
+      expenseRes,
+      investRes,
+      assetRes,
+      recentRes,
+      recurringRes,
+      budgetsRes,
+      cashflowRes,
+      mailStatsRes,
+      recentTradesRes,
+      investByTypeRes,
+    ] = await Promise.all([
         query(
           `SELECT COALESCE(SUM(amount),0) AS total FROM transactions
            WHERE user_id=$1 AND type='income' AND deleted_at IS NULL AND date >= $2 AND date < $3`,
@@ -36,7 +47,8 @@ router.get(
         ),
         query(
           `SELECT COALESCE(SUM(invested_amount),0) AS invested,
-                  COALESCE(SUM(current_value),0) AS current
+                  COALESCE(SUM(current_value),0) AS current,
+                  COUNT(*) FILTER (WHERE source = 'email')::int AS email_holdings
            FROM investments WHERE user_id=$1 AND deleted_at IS NULL`,
           [userId]
         ),
@@ -83,6 +95,28 @@ router.get(
            ORDER BY period ASC`,
           [userId]
         ),
+        query(
+          `SELECT
+             COUNT(*) FILTER (WHERE status = 'imported')::int AS imported_jobs,
+             COALESCE(SUM(trades_imported),0)::int AS trades_imported,
+             COUNT(*) FILTER (WHERE created_at >= $2)::int AS jobs_this_month
+           FROM mail_import_jobs WHERE user_id = $1`,
+          [userId, start]
+        ),
+        query(
+          `SELECT id, trade_date, side, asset_type, name, symbol, amount, broker, quantity, price
+           FROM investment_transactions
+           WHERE user_id = $1
+           ORDER BY trade_date DESC, created_at DESC
+           LIMIT 6`,
+          [userId]
+        ),
+        query(
+          `SELECT type, COALESCE(SUM(current_value),0) AS current, COALESCE(SUM(invested_amount),0) AS invested
+           FROM investments WHERE user_id=$1 AND deleted_at IS NULL
+           GROUP BY type ORDER BY current DESC`,
+          [userId]
+        ),
       ]);
 
     const monthlyIncome = Number(incomeRes.rows[0].total);
@@ -116,6 +150,8 @@ router.get(
     if (budgetUtilization >= 100) health -= 15;
     health = Math.round(Math.max(0, Math.min(100, health)));
 
+    const mail = mailStatsRes.rows[0] || {};
+
     res.json({
       overview: {
         monthlyIncome,
@@ -130,6 +166,9 @@ router.get(
         netWorth,
         financialHealthScore: health,
         accountBalance: netSavings, // simplified current-month balance proxy
+        emailHoldings: Number(investRes.rows[0].email_holdings || 0),
+        importedTrades: Number(mail.trades_imported || 0),
+        importJobsThisMonth: Number(mail.jobs_this_month || 0),
       },
       expenseByCategory: expenseByCategory.rows,
       cashFlowTrend: cashflowRes.rows.map((r) => ({
@@ -141,6 +180,17 @@ router.get(
       budgets: budgetsRes.rows,
       upcomingPayments: recurringRes.rows,
       recentTransactions: recentRes.rows,
+      recentInvestmentTrades: recentTradesRes.rows,
+      investmentAllocation: investByTypeRes.rows.map((r) => ({
+        type: r.type,
+        current: Number(r.current),
+        invested: Number(r.invested),
+      })),
+      mailImport: {
+        importedJobs: Number(mail.imported_jobs || 0),
+        tradesImported: Number(mail.trades_imported || 0),
+        jobsThisMonth: Number(mail.jobs_this_month || 0),
+      },
     });
   })
 );
