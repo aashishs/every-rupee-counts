@@ -6,7 +6,27 @@ import { isLikelyInvestmentMail } from './contractParsers.js';
 
 const INVESTMENT_SEARCH_SINCE_DAYS = 90;
 
-async function extractPdfText(buffer) {
+function stripHtml(html = '') {
+  return String(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+export async function extractPdfText(buffer) {
   try {
     const parser = new PDFParse({ data: buffer });
     const result = await parser.getText();
@@ -22,9 +42,9 @@ export async function extractDocumentsFromParsedMail(parsed) {
   const subject = parsed.subject || '';
   const from = parsed.from?.text || '';
   const date = parsed.date ? parsed.date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-  const textBody = [parsed.text || '', parsed.html ? String(parsed.html).replace(/<[^>]+>/g, ' ') : '']
+  const textBody = [parsed.text || '', stripHtml(parsed.html || '')]
+    .filter(Boolean)
     .join('\n')
-    .replace(/\s+/g, ' ')
     .trim();
 
   const attachments = parsed.attachments || [];
@@ -40,12 +60,16 @@ export async function extractDocumentsFromParsedMail(parsed) {
       text = await extractPdfText(att.content);
     } else if (
       contentType.includes('text') ||
+      contentType.includes('html') ||
       lower.endsWith('.txt') ||
       lower.endsWith('.csv') ||
       lower.endsWith('.html') ||
       lower.endsWith('.htm')
     ) {
-      text = att.content.toString('utf8');
+      const raw = att.content.toString('utf8');
+      text = lower.endsWith('.html') || lower.endsWith('.htm') || contentType.includes('html')
+        ? stripHtml(raw)
+        : raw;
     }
 
     if (text && text.trim().length > 40) {
@@ -80,7 +104,44 @@ export async function extractDocumentsFromParsedMail(parsed) {
   return docs;
 }
 
-export async function fetchInvestmentMails(accountRow, { limit = 40 } = {}) {
+export async function testImapConnection(accountLike) {
+  const password = accountLike.password || decryptSecret(accountLike);
+  const client = new ImapFlow({
+    host: accountLike.imap_host,
+    port: Number(accountLike.imap_port || 993),
+    secure: accountLike.imap_secure !== false,
+    auth: {
+      user: accountLike.username || accountLike.email_address,
+      pass: password,
+    },
+    logger: false,
+  });
+
+  try {
+    await client.connect();
+    const status = await client.status('INBOX', { messages: true, unseen: true });
+    await client.logout();
+    return {
+      ok: true,
+      messages: status.messages || 0,
+      unseen: status.unseen || 0,
+    };
+  } catch (err) {
+    try {
+      await client.logout();
+    } catch {
+      // ignore
+    }
+    const error = new Error(err.responseText || err.message || 'IMAP connection failed');
+    error.status = 400;
+    throw error;
+  }
+}
+
+export async function fetchInvestmentMails(
+  accountRow,
+  { limit = 40, rescan = false, sinceDays = INVESTMENT_SEARCH_SINCE_DAYS } = {}
+) {
   const password = decryptSecret(accountRow);
   const client = new ImapFlow({
     host: accountRow.imap_host,
@@ -95,21 +156,18 @@ export async function fetchInvestmentMails(accountRow, { limit = 40 } = {}) {
 
   const documents = [];
   let maxUid = Number(accountRow.last_uid || 0);
+  const lastUidFloor = rescan ? 0 : Number(accountRow.last_uid || 0);
 
   try {
     await client.connect();
     const lock = await client.getMailboxLock('INBOX');
     try {
       const since = new Date();
-      since.setDate(since.getDate() - INVESTMENT_SEARCH_SINCE_DAYS);
+      since.setDate(since.getDate() - Number(sinceDays || INVESTMENT_SEARCH_SINCE_DAYS));
 
-      // Broad OR search; filter further in JS
-      const uids = await client.search({
-        since,
-      });
-
+      const uids = await client.search({ since });
       const sorted = (uids || []).sort((a, b) => a - b);
-      const candidates = sorted.filter((uid) => uid > Number(accountRow.last_uid || 0)).slice(-limit);
+      const candidates = sorted.filter((uid) => uid > lastUidFloor).slice(-limit);
 
       for (const uid of candidates) {
         maxUid = Math.max(maxUid, uid);
@@ -119,7 +177,7 @@ export async function fetchInvestmentMails(accountRow, { limit = 40 } = {}) {
         const subject = parsed.subject || '';
         const from = parsed.from?.text || '';
         const hasAttachment = (parsed.attachments || []).length > 0;
-        const preview = parsed.text || '';
+        const preview = parsed.text || stripHtml(parsed.html || '');
 
         if (!isLikelyInvestmentMail({ subject, from, text: preview, hasAttachment })) {
           continue;
@@ -150,26 +208,45 @@ export async function extractTextFromUpload(file) {
   const mime = (file.mimetype || '').toLowerCase();
 
   if (mime.includes('pdf') || lower.endsWith('.pdf')) {
+    const text = await extractPdfText(file.buffer);
     return {
-      text: await extractPdfText(file.buffer),
+      text,
       filename: name,
-      subject: `Uploaded: ${name}`,
+      subject: `Uploaded contract: ${name}`,
       from: 'upload',
+      date: new Date().toISOString().slice(0, 10),
+      messageId: null,
     };
   }
 
   if (lower.endsWith('.eml') || mime.includes('message/rfc822')) {
     const parsed = await simpleParser(file.buffer);
     const docs = await extractDocumentsFromParsedMail(parsed);
-    return docs;
+    return docs.length
+      ? docs
+      : [{
+          text: parsed.text || stripHtml(parsed.html || ''),
+          filename: name,
+          subject: parsed.subject || `Uploaded: ${name}`,
+          from: parsed.from?.text || 'upload',
+          date: parsed.date ? parsed.date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+          messageId: parsed.messageId || null,
+        }];
   }
 
-  const text = file.buffer.toString('utf8');
+  const raw = file.buffer.toString('utf8');
+  const text =
+    lower.endsWith('.html') || lower.endsWith('.htm') || mime.includes('html')
+      ? stripHtml(raw)
+      : raw;
+
   return {
     text,
     filename: name,
-    subject: `Uploaded: ${name}`,
+    subject: `Uploaded contract: ${name}`,
     from: 'upload',
+    date: new Date().toISOString().slice(0, 10),
+    messageId: null,
   };
 }
 

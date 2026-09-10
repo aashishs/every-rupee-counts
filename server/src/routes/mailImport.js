@@ -11,6 +11,7 @@ import {
   fetchInvestmentMails,
   extractTextFromUpload,
   extractDocumentsFromParsedMail,
+  testImapConnection,
 } from '../services/mailFetcher.js';
 import {
   parseInvestmentDocument,
@@ -197,6 +198,24 @@ router.post(
       return res.status(400).json({ error: 'IMAP host is required for custom providers' });
     }
 
+    // Optional live IMAP check (UI has a dedicated "Test connection" action)
+    if (req.body.verify === true || req.body.verify === 'true') {
+      try {
+        await testImapConnection({
+          imap_host: host,
+          imap_port: port,
+          imap_secure: secure,
+          username,
+          email_address: req.body.email_address,
+          password: req.body.password,
+        });
+      } catch (err) {
+        return res.status(400).json({
+          error: `Could not connect to mailbox: ${err.message}. For Gmail use an App Password with IMAP enabled.`,
+        });
+      }
+    }
+
     const enc = encryptSecret(req.body.password);
     const result = await query(
       `INSERT INTO email_accounts
@@ -221,6 +240,43 @@ router.post(
     );
 
     res.status(201).json({ account: result.rows[0] });
+  })
+);
+
+router.post(
+  '/accounts/test',
+  [
+    body('email_address').isEmail(),
+    body('password').isLength({ min: 4 }),
+  ],
+  validate,
+  asyncHandler(async (req, res) => {
+    const provider = (req.body.provider || 'gmail').toLowerCase();
+    const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.custom;
+    const host = req.body.imap_host || preset.host;
+    if (!host) return res.status(400).json({ error: 'IMAP host required' });
+    const result = await testImapConnection({
+      imap_host: host,
+      imap_port: Number(req.body.imap_port || preset.port || 993),
+      imap_secure: req.body.imap_secure !== false,
+      username: req.body.username || req.body.email_address,
+      email_address: req.body.email_address,
+      password: req.body.password,
+    });
+    res.json(result);
+  })
+);
+
+router.post(
+  '/accounts/:id/test',
+  asyncHandler(async (req, res) => {
+    const accountRes = await query(
+      `SELECT * FROM email_accounts WHERE id = $1 AND user_id = $2 AND is_active = TRUE`,
+      [req.params.id, req.user.id]
+    );
+    if (!accountRes.rows[0]) return res.status(404).json({ error: 'Account not found' });
+    const result = await testImapConnection(accountRes.rows[0]);
+    res.json(result);
   })
 );
 
@@ -250,6 +306,8 @@ router.post(
 
     const { documents, maxUid } = await fetchInvestmentMails(account, {
       limit: Number(req.body?.limit || 40),
+      rescan: Boolean(req.body?.rescan),
+      sinceDays: Number(req.body?.sinceDays || 90),
     });
 
     const results = [];
@@ -276,6 +334,10 @@ router.post(
       jobs: results.map((r) => r.job),
       importedJobs: imported,
       tradesImported: trades,
+      message:
+        documents.length === 0
+          ? 'No new contract notes / MF statements found in recent mail.'
+          : `Found ${documents.length} document(s), imported ${trades} trade(s).`,
     });
   })
 );
@@ -288,21 +350,95 @@ router.post(
     if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
 
     const results = [];
+    const skippedEmpty = [];
     for (const file of files) {
       const extracted = await extractTextFromUpload(file);
       const docs = Array.isArray(extracted) ? extracted : [extracted];
+      let used = false;
       for (const doc of docs) {
         if (!doc?.text || doc.text.trim().length < 20) continue;
+        used = true;
         const outcome = await processDocument(req.user.id, doc, { source: 'upload' });
         results.push(outcome);
       }
+      if (!used) skippedEmpty.push(file.originalname || 'file');
+    }
+
+    if (!results.length) {
+      return res.status(400).json({
+        error:
+          skippedEmpty.length
+            ? `Could not extract readable text from: ${skippedEmpty.join(', ')}. Try a text/HTML contract note, or paste the text.`
+            : 'No extractable contract content found.',
+      });
     }
 
     res.json({
       jobs: results.map((r) => r.job),
       importedJobs: results.filter((r) => r.job?.status === 'imported').length,
       tradesImported: results.reduce((s, r) => s + Number(r.job?.trades_imported || 0), 0),
+      skippedEmpty,
     });
+  })
+);
+
+router.post(
+  '/preview',
+  upload.array('files', 5),
+  asyncHandler(async (req, res) => {
+    const files = req.files || [];
+    if (!files.length && !req.body?.text) {
+      return res.status(400).json({ error: 'Upload files or provide text to preview' });
+    }
+
+    const previews = [];
+    for (const file of files) {
+      const extracted = await extractTextFromUpload(file);
+      const docs = Array.isArray(extracted) ? extracted : [extracted];
+      for (const doc of docs) {
+        if (!doc?.text) continue;
+        const parsedDoc = parseInvestmentDocument(doc.text, doc);
+        previews.push({
+          filename: doc.filename || file.originalname,
+          subject: doc.subject,
+          document_type: parsedDoc.document_type,
+          broker: parsedDoc.broker,
+          trades_found: parsedDoc.trades.length,
+          trades: parsedDoc.trades,
+          excerpt: String(doc.text).slice(0, 400),
+        });
+      }
+    }
+
+    if (req.body?.text) {
+      const parsedDoc = parseInvestmentDocument(req.body.text, {
+        subject: req.body.subject || 'preview',
+        from: 'preview',
+      });
+      previews.push({
+        filename: null,
+        subject: req.body.subject || 'preview',
+        document_type: parsedDoc.document_type,
+        broker: parsedDoc.broker,
+        trades_found: parsedDoc.trades.length,
+        trades: parsedDoc.trades,
+        excerpt: String(req.body.text).slice(0, 400),
+      });
+    }
+
+    res.json({ previews });
+  })
+);
+
+router.get(
+  '/sample-contract',
+  asyncHandler(async (req, res) => {
+    const kind = (req.query.kind || 'stocks').toLowerCase();
+    const text = kind === 'mf' ? sampleMutualFundCasText() : sampleContractNoteText();
+    const filename = kind === 'mf' ? 'sample-mf-cas.txt' : 'sample-contract-note.txt';
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(text.trim() + '\n');
   })
 );
 

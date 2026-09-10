@@ -194,6 +194,33 @@ export function parseContractNote(text, meta = {}) {
     }
   }
 
+  // Groww / Upstox / Angel confirmation style single-line blocks
+  if (!trades.length) {
+    const growwLike =
+      /(?:Bought|Sold|BUY|SELL)\s+([A-Z0-9&\-.]+)\s+(?:x|×)?\s*(\d+(?:\.\d+)?)\s*(?:shares?|qty)?\s*(?:@|at|for)?\s*(?:₹|Rs\.?)?\s*([0-9,]+\.?\d*)/gi;
+    let gm;
+    while ((gm = growwLike.exec(text)) !== null) {
+      const side = /sell|sold/i.test(gm[0]) ? 'sell' : 'buy';
+      const qty = parseNumber(gm[2]);
+      const price = parseNumber(gm[3]);
+      trades.push({
+        trade_date: tradeDate,
+        side,
+        asset_type: 'stock',
+        name: gm[1],
+        symbol: gm[1],
+        isin: null,
+        quantity: qty,
+        price,
+        amount: qty * price,
+        charges: 0,
+        broker,
+        exchange: null,
+        notes: 'Imported from trade confirmation',
+      });
+    }
+  }
+
   return {
     document_type: 'contract_note',
     broker,

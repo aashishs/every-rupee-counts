@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Mail, Upload, RefreshCw, Sparkles } from 'lucide-react';
+import { Mail, Upload, RefreshCw, Sparkles, FileText, Download } from 'lucide-react';
 import { api } from '../lib/api';
-import { formatINR } from '../lib/utils';
+import { formatINR, cn } from '../lib/utils';
 import { Badge, Button, Card, EmptyState, Input, Label, PageHeader, Select, TextArea } from '../components/ui';
 
 interface Provider {
@@ -49,6 +49,25 @@ interface InvestmentTx {
   broker?: string;
 }
 
+interface PreviewTrade {
+  name: string;
+  side: string;
+  quantity: number;
+  price: number;
+  amount: number;
+  trade_date?: string;
+}
+
+interface PreviewDoc {
+  filename?: string | null;
+  subject?: string;
+  document_type: string;
+  broker: string;
+  trades_found: number;
+  trades: PreviewTrade[];
+  excerpt?: string;
+}
+
 interface Stats {
   overview: {
     tradeCount: number;
@@ -73,13 +92,18 @@ const emptyAccount = {
   imap_port: '993',
 };
 
+type Tab = 'email' | 'upload';
+
 export function MailImportPage() {
+  const [tab, setTab] = useState<Tab>('email');
   const [providers, setProviders] = useState<Provider[]>([]);
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [form, setForm] = useState(emptyAccount);
   const [paste, setPaste] = useState({ subject: '', text: '' });
+  const [previews, setPreviews] = useState<PreviewDoc[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -103,9 +127,9 @@ export function MailImportPage() {
 
   const tip = useMemo(() => {
     if (form.provider === 'gmail') {
-      return 'Use a Gmail App Password (Google Account → Security → App passwords). IMAP must be enabled.';
+      return 'Gmail: enable IMAP, create an App Password, then Sync to extract contract notes & CAS attachments.';
     }
-    return 'Works with any IMAP inbox: Outlook, Yahoo, Zoho, or your broker-forwarded mailbox.';
+    return 'Any IMAP inbox works. Sync scans recent mail for broker contract notes and MF statements.';
   }, [form.provider]);
 
   function onProviderChange(id: string) {
@@ -119,6 +143,25 @@ export function MailImportPage() {
     }));
   }
 
+  async function testConnection() {
+    setBusy('test');
+    setError('');
+    setMessage('');
+    try {
+      const { data } = await api.post('/mail-import/accounts/test', {
+        ...form,
+        imap_port: Number(form.imap_port),
+        username: form.username || form.email_address,
+      });
+      setMessage(`Mailbox OK — ${data.messages} messages (${data.unseen} unread).`);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string } } };
+      setError(ax.response?.data?.error || 'Connection test failed.');
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function connectAccount(e: FormEvent) {
     e.preventDefault();
     setBusy('connect');
@@ -129,9 +172,10 @@ export function MailImportPage() {
         ...form,
         imap_port: Number(form.imap_port),
         username: form.username || form.email_address,
+        verify: false,
       });
       setForm(emptyAccount);
-      setMessage('Mailbox connected. Run Sync to pull contract notes and MF statements.');
+      setMessage('Mailbox saved. Click Sync to extract contract notes from email.');
       await load();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { error?: string } } };
@@ -141,15 +185,17 @@ export function MailImportPage() {
     }
   }
 
-  async function syncAccount(id: string) {
+  async function syncAccount(id: string, rescan = false) {
     setBusy(`sync-${id}`);
     setError('');
     setMessage('');
     try {
-      const { data } = await api.post(`/mail-import/accounts/${id}/sync`, { limit: 40 });
-      setMessage(
-        `Scan complete: ${data.scannedDocuments} investment mail(s), ${data.tradesImported} trade(s) imported.`
-      );
+      const { data } = await api.post(`/mail-import/accounts/${id}/sync`, {
+        limit: 50,
+        rescan,
+        sinceDays: 90,
+      });
+      setMessage(data.message || `Imported ${data.tradesImported} trade(s) from ${data.scannedDocuments} document(s).`);
       await load();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { error?: string } } };
@@ -164,24 +210,42 @@ export function MailImportPage() {
     await load();
   }
 
-  async function onUpload(files: FileList | null) {
-    if (!files?.length) return;
+  async function processUploadFiles(files: FileList | File[] | null) {
+    if (!files || (files as FileList).length === 0) return;
+    const list = Array.from(files as FileList);
     setBusy('upload');
     setError('');
     setMessage('');
+    setPreviews([]);
     try {
+      const previewBody = new FormData();
+      list.forEach((f) => previewBody.append('files', f));
+      const previewRes = await api.post('/mail-import/preview', previewBody, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setPreviews(previewRes.data.previews || []);
+
       const body = new FormData();
-      Array.from(files).forEach((f) => body.append('files', f));
+      list.forEach((f) => body.append('files', f));
       const { data } = await api.post('/mail-import/upload', body, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setMessage(`Uploaded files processed — ${data.tradesImported} trade(s) imported.`);
+      setMessage(
+        `Extracted from upload — ${data.tradesImported} trade(s) imported across ${data.importedJobs} document(s).`
+      );
       await load();
-    } catch {
-      setError('Upload failed. Try PDF, TXT, CSV, HTML, or EML contract notes / CAS files.');
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string } } };
+      setError(ax.response?.data?.error || 'Upload failed. Use PDF, TXT, HTML, CSV, or EML contract notes / CAS.');
     } finally {
       setBusy('');
     }
+  }
+
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    void processUploadFiles(e.dataTransfer.files);
   }
 
   async function onPaste(e: FormEvent) {
@@ -190,10 +254,12 @@ export function MailImportPage() {
     setError('');
     setMessage('');
     try {
+      const previewRes = await api.post('/mail-import/preview', paste);
+      setPreviews(previewRes.data.previews || []);
       const { data } = await api.post('/mail-import/paste', paste);
       setMessage(
         data.job?.status === 'imported'
-          ? `Imported ${data.job.trades_imported} trade(s) from pasted text.`
+          ? `Imported ${data.job.trades_imported} trade(s) from pasted contract text.`
           : data.job?.error_message || `Status: ${data.job?.status}`
       );
       setPaste({ subject: '', text: '' });
@@ -220,13 +286,27 @@ export function MailImportPage() {
     }
   }
 
+  async function downloadSample(kind: 'stocks' | 'mf') {
+    const token = localStorage.getItem('erc_token');
+    const res = await fetch(`/api/mail-import/sample-contract?kind=${kind}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = kind === 'mf' ? 'sample-mf-cas.txt' : 'sample-contract-note.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const o = stats?.overview;
 
   return (
     <div>
       <PageHeader
-        title="Mail import"
-        subtitle="Connect Gmail or any IMAP inbox, or upload broker contract notes and MF CAS — like MyProfit auto-import."
+        title="Contract import"
+        subtitle="Extract trades from Gmail/any email, or manually upload broker contract notes and MF CAS."
         actions={
           <Button variant="secondary" onClick={runDemo} disabled={!!busy}>
             <Sparkles size={16} />
@@ -257,14 +337,43 @@ export function MailImportPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="mb-4 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setTab('email')}
+          className={cn(
+            'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition',
+            tab === 'email'
+              ? 'bg-[var(--color-brand)] text-white'
+              : 'bg-[var(--color-brand-soft)] text-[var(--color-brand)]'
+          )}
+        >
+          <Mail size={16} />
+          Extract from email
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('upload')}
+          className={cn(
+            'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition',
+            tab === 'upload'
+              ? 'bg-[var(--color-brand)] text-white'
+              : 'bg-[var(--color-brand-soft)] text-[var(--color-brand)]'
+          )}
+        >
+          <Upload size={16} />
+          Manual upload
+        </button>
+      </div>
+
+      {tab === 'email' ? (
         <Card>
           <div className="mb-3 flex items-center gap-2">
             <Mail size={18} className="text-[var(--color-brand)]" />
-            <h2 className="font-display text-lg font-semibold">Connect mailbox</h2>
+            <h2 className="font-display text-lg font-semibold">Connect Gmail or any mail</h2>
           </div>
           <p className="mb-4 text-sm text-[var(--color-ink-muted)]">{tip}</p>
-          <form className="space-y-3" onSubmit={connectAccount}>
+          <form className="grid gap-3 lg:grid-cols-2" onSubmit={connectAccount}>
             <div>
               <Label>Provider</Label>
               <Select value={form.provider} onChange={(e) => onProviderChange(e.target.value)}>
@@ -296,7 +405,7 @@ export function MailImportPage() {
               />
             </div>
             {form.provider === 'custom' ? (
-              <div className="grid grid-cols-2 gap-3">
+              <>
                 <div>
                   <Label>IMAP host</Label>
                   <Input value={form.imap_host} onChange={(e) => setForm({ ...form, imap_host: e.target.value })} />
@@ -305,11 +414,20 @@ export function MailImportPage() {
                   <Label>Port</Label>
                   <Input value={form.imap_port} onChange={(e) => setForm({ ...form, imap_port: e.target.value })} />
                 </div>
+              </>
+            ) : (
+              <div className="flex items-end text-xs text-[var(--color-ink-muted)]">
+                Host: {form.imap_host}:{form.imap_port}
               </div>
-            ) : null}
-            <Button type="submit" disabled={!!busy}>
-              {busy === 'connect' ? 'Connecting…' : 'Connect inbox'}
-            </Button>
+            )}
+            <div className="flex flex-wrap gap-2 lg:col-span-2">
+              <Button type="button" variant="secondary" onClick={testConnection} disabled={!!busy || !form.email_address || !form.password}>
+                {busy === 'test' ? 'Testing…' : 'Test connection'}
+              </Button>
+              <Button type="submit" disabled={!!busy}>
+                {busy === 'connect' ? 'Saving…' : 'Save mailbox'}
+              </Button>
+            </div>
           </form>
 
           <div className="mt-6 space-y-3">
@@ -323,10 +441,13 @@ export function MailImportPage() {
                       {a.last_synced_at ? ` · synced ${format(new Date(a.last_synced_at), 'dd MMM HH:mm')}` : ''}
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => syncAccount(a.id)} disabled={!!busy}>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="secondary" onClick={() => syncAccount(a.id, false)} disabled={!!busy}>
                       <RefreshCw size={14} />
-                      {busy === `sync-${a.id}` ? 'Syncing…' : 'Sync'}
+                      {busy === `sync-${a.id}` ? 'Extracting…' : 'Extract from inbox'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => syncAccount(a.id, true)} disabled={!!busy}>
+                      Rescan 90 days
                     </Button>
                     <Button variant="ghost" onClick={() => removeAccount(a.id)}>
                       Remove
@@ -335,31 +456,63 @@ export function MailImportPage() {
                 </div>
               ))
             ) : (
-              <EmptyState title="No mailbox yet" body="Connect Gmail (app password) or another IMAP account to auto-pull contract notes." />
+              <EmptyState
+                title="No mailbox connected"
+                body="Save Gmail (app password) or another IMAP account, then extract contract notes automatically."
+              />
             )}
           </div>
         </Card>
-
-        <div className="space-y-4">
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <div className="mb-3 flex items-center gap-2">
               <Upload size={18} className="text-[var(--color-brand)]" />
-              <h2 className="font-display text-lg font-semibold">Upload documents</h2>
+              <h2 className="font-display text-lg font-semibold">Upload contract documents</h2>
             </div>
             <p className="mb-3 text-sm text-[var(--color-ink-muted)]">
-              Drop broker contract notes (PDF/HTML), CAMS/KFintech CAS, tradebooks, or .eml files.
+              Manual upload of broker contract notes, CAMS/KFintech CAS, tradebooks, or forwarded .eml files.
             </p>
-            <Input
-              type="file"
-              multiple
-              accept=".pdf,.txt,.csv,.html,.htm,.eml,text/plain,application/pdf"
-              onChange={(e) => onUpload(e.target.files)}
-              disabled={!!busy}
-            />
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              className={cn(
+                'rounded-2xl border-2 border-dashed px-4 py-10 text-center transition',
+                dragOver
+                  ? 'border-[var(--color-brand)] bg-[var(--color-brand-soft)]'
+                  : 'border-[var(--color-border)]'
+              )}
+            >
+              <FileText className="mx-auto mb-2 text-[var(--color-brand)]" />
+              <p className="text-sm font-medium">Drop contract PDF / HTML / EML / TXT here</p>
+              <p className="mt-1 text-xs text-[var(--color-ink-muted)]">or choose files</p>
+              <Input
+                className="mt-4"
+                type="file"
+                multiple
+                accept=".pdf,.txt,.csv,.html,.htm,.eml,text/plain,application/pdf,message/rfc822"
+                onChange={(e) => processUploadFiles(e.target.files)}
+                disabled={!!busy}
+              />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="button" variant="ghost" onClick={() => downloadSample('stocks')} disabled={!!busy}>
+                <Download size={14} />
+                Sample contract note
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => downloadSample('mf')} disabled={!!busy}>
+                <Download size={14} />
+                Sample MF CAS
+              </Button>
+            </div>
           </Card>
 
           <Card>
-            <h2 className="mb-3 font-display text-lg font-semibold">Paste email / statement text</h2>
+            <h2 className="mb-3 font-display text-lg font-semibold">Paste contract / email text</h2>
             <form className="space-y-3" onSubmit={onPaste}>
               <div>
                 <Label>Subject (optional)</Label>
@@ -372,7 +525,7 @@ export function MailImportPage() {
               <div>
                 <Label>Body / extracted text</Label>
                 <TextArea
-                  rows={8}
+                  rows={10}
                   required
                   value={paste.text}
                   onChange={(e) => setPaste({ ...paste, text: e.target.value })}
@@ -380,12 +533,38 @@ export function MailImportPage() {
                 />
               </div>
               <Button type="submit" disabled={!!busy}>
-                {busy === 'paste' ? 'Parsing…' : 'Extract & import'}
+                {busy === 'paste' ? 'Extracting…' : 'Extract & import'}
               </Button>
             </form>
           </Card>
         </div>
-      </div>
+      )}
+
+      {previews.length ? (
+        <Card className="mt-6">
+          <h2 className="mb-3 font-display text-lg font-semibold">Extraction preview</h2>
+          <div className="space-y-4">
+            {previews.map((p, idx) => (
+              <div key={`${p.filename || p.subject}-${idx}`} className="border-b border-[var(--color-border)] pb-3 last:border-0">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{p.filename || p.subject || 'Document'}</p>
+                  <Badge>{p.document_type}</Badge>
+                  <Badge tone="neutral">{p.broker}</Badge>
+                  <Badge tone={p.trades_found ? 'success' : 'warn'}>{p.trades_found} trades</Badge>
+                </div>
+                {p.trades?.slice(0, 6).map((t, i) => (
+                  <div key={i} className="flex justify-between text-sm text-[var(--color-ink-muted)]">
+                    <span>
+                      {t.side?.toUpperCase()} {t.name} × {t.quantity}
+                    </span>
+                    <span>{formatINR(t.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>
@@ -410,7 +589,7 @@ export function MailImportPage() {
                 </div>
               ))
             ) : (
-              <EmptyState title="No trades yet" body="Sync mail or load the demo to populate holdings." />
+              <EmptyState title="No trades yet" body="Extract from email or upload a contract to populate holdings." />
             )}
           </div>
         </Card>
@@ -440,42 +619,11 @@ export function MailImportPage() {
                 </div>
               ))
             ) : (
-              <EmptyState title="Import log empty" body="Successful and skipped mail imports show up here." />
+              <EmptyState title="Import log empty" body="Email extractions and manual uploads appear here." />
             )}
           </div>
         </Card>
       </div>
-
-      {stats?.byBroker?.length || stats?.byAsset?.length ? (
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          <Card>
-            <h2 className="mb-3 font-display text-lg font-semibold">By broker / source</h2>
-            <div className="space-y-2">
-              {stats.byBroker.map((b) => (
-                <div key={b.broker} className="flex justify-between text-sm">
-                  <span className="capitalize">{b.broker}</span>
-                  <span>
-                    {b.trades} trades · {formatINR(b.amount)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <h2 className="mb-3 font-display text-lg font-semibold">By asset type</h2>
-            <div className="space-y-2">
-              {stats.byAsset.map((b) => (
-                <div key={b.asset_type} className="flex justify-between text-sm">
-                  <span className="capitalize">{b.asset_type.replace('_', ' ')}</span>
-                  <span>
-                    {b.trades} trades · {formatINR(b.amount)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      ) : null}
     </div>
   );
 }
