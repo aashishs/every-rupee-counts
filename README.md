@@ -51,7 +51,7 @@ npm run docker:up    # full stack via Docker
 | --- | --- |
 | Dashboard | Balance, income/expense, net worth, health score, charts, upcoming payments, mail-import stats |
 | Transactions | Expense & income CRUD, categories, tags, notes, search/filter, offline fallback |
-| Investments | Portfolio CRUD, live value updates, gain/loss, allocation chart, history |
+| Investments / Portfolio | Multi-asset tracker: stocks, MFs, FDs, RDs, EPF, PPF, NPS, insurance, ULIP, property, gold, bonds, PMS, AIF |
 | Mail import | Gmail/IMAP sync, contract note & MF CAS parsing, PDF/EML upload, paste import, portfolio auto-update |
 | Assets | Physical/digital assets with appreciation tracking |
 | Cash flow | Weekly / monthly / yearly income vs expense trends |

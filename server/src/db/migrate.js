@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS investments (
   avg_price NUMERIC(14, 4) DEFAULT 0,
   broker VARCHAR(100),
   source VARCHAR(40) DEFAULT 'manual',
+  institution VARCHAR(150),
+  reference_no VARCHAR(100),
+  maturity_date DATE,
+  interest_rate NUMERIC(8, 4),
+  meta JSONB DEFAULT '{}',
   client_id UUID,
   synced_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -248,6 +253,11 @@ ALTER TABLE investments ADD COLUMN IF NOT EXISTS units NUMERIC(18, 6) DEFAULT 0;
 ALTER TABLE investments ADD COLUMN IF NOT EXISTS avg_price NUMERIC(14, 4) DEFAULT 0;
 ALTER TABLE investments ADD COLUMN IF NOT EXISTS broker VARCHAR(100);
 ALTER TABLE investments ADD COLUMN IF NOT EXISTS source VARCHAR(40) DEFAULT 'manual';
+ALTER TABLE investments ADD COLUMN IF NOT EXISTS institution VARCHAR(150);
+ALTER TABLE investments ADD COLUMN IF NOT EXISTS reference_no VARCHAR(100);
+ALTER TABLE investments ADD COLUMN IF NOT EXISTS maturity_date DATE;
+ALTER TABLE investments ADD COLUMN IF NOT EXISTS interest_rate NUMERIC(8, 4);
+ALTER TABLE investments ADD COLUMN IF NOT EXISTS meta JSONB DEFAULT '{}';
 `;
 
 const defaultCategories = [

@@ -69,6 +69,15 @@ interface DashboardData {
     type: string;
     current: number;
     invested: number;
+    count?: number;
+  }>;
+  maturingSoon?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    maturity_date: string;
+    current_value: string | number;
+    institution?: string;
   }>;
   mailImport?: {
     importedJobs: number;
@@ -195,9 +204,16 @@ export function DashboardPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <h2 className="mb-4 font-display text-lg font-semibold">
-            {allocData.length ? 'Portfolio mix' : 'Expense mix'}
-          </h2>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="font-display text-lg font-semibold">
+              {allocData.length ? 'Portfolio mix' : 'Expense mix'}
+            </h2>
+            {allocData.length ? (
+              <Link to="/investments" className="text-sm font-medium text-[var(--color-brand)]">
+                Open portfolio
+              </Link>
+            ) : null}
+          </div>
           {(allocData.length ? allocData : pieData).length ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -290,6 +306,54 @@ export function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      {(data.investmentAllocation?.length || data.maturingSoon?.length) ? (
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <Card>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-display text-lg font-semibold">Multi-asset breakdown</h2>
+              <Link to="/investments" className="text-sm font-medium text-[var(--color-brand)]">
+                Manage
+              </Link>
+            </div>
+            <div className="space-y-2">
+              {(data.investmentAllocation || []).map((a) => (
+                <div key={a.type} className="flex items-center justify-between gap-3 text-sm border-b border-[var(--color-border)] pb-2 last:border-0">
+                  <div>
+                    <p className="font-medium">{a.type}</p>
+                    <p className="text-xs text-[var(--color-ink-muted)]">{a.count || 0} holding(s)</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold">{formatINR(a.current)}</p>
+                    <p className="text-xs text-[var(--color-ink-muted)]">Cost {formatINR(a.invested)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card>
+            <h2 className="mb-3 font-display text-lg font-semibold">Maturing soon</h2>
+            <div className="space-y-3">
+              {data.maturingSoon?.length ? (
+                data.maturingSoon.map((m) => (
+                  <div key={m.id} className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3 last:border-0">
+                    <div>
+                      <p className="font-medium">{m.name}</p>
+                      <p className="text-xs text-[var(--color-ink-muted)]">
+                        {m.type}
+                        {m.institution ? ` · ${m.institution}` : ''} · {format(new Date(m.maturity_date), 'dd MMM yyyy')}
+                      </p>
+                    </div>
+                    <p className="font-semibold">{formatINR(m.current_value)}</p>
+                  </div>
+                ))
+              ) : (
+                <EmptyState title="Nothing maturing" body="FDs, RDs, and policies with maturity dates show up here." />
+              )}
+            </div>
+          </Card>
+        </div>
+      ) : null}
     </div>
   );
 }

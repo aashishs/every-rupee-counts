@@ -34,6 +34,7 @@ router.get(
       mailStatsRes,
       recentTradesRes,
       investByTypeRes,
+      maturingRes,
     ] = await Promise.all([
         query(
           `SELECT COALESCE(SUM(amount),0) AS total FROM transactions
@@ -112,9 +113,19 @@ router.get(
           [userId]
         ),
         query(
-          `SELECT type, COALESCE(SUM(current_value),0) AS current, COALESCE(SUM(invested_amount),0) AS invested
+          `SELECT type, COALESCE(SUM(current_value),0) AS current, COALESCE(SUM(invested_amount),0) AS invested,
+                  COUNT(*)::int AS count
            FROM investments WHERE user_id=$1 AND deleted_at IS NULL
            GROUP BY type ORDER BY current DESC`,
+          [userId]
+        ),
+        query(
+          `SELECT id, name, type, maturity_date, current_value, institution
+           FROM investments
+           WHERE user_id=$1 AND deleted_at IS NULL
+             AND maturity_date IS NOT NULL
+             AND maturity_date <= (CURRENT_DATE + INTERVAL '90 days')
+           ORDER BY maturity_date ASC LIMIT 5`,
           [userId]
         ),
       ]);
@@ -169,6 +180,7 @@ router.get(
         emailHoldings: Number(investRes.rows[0].email_holdings || 0),
         importedTrades: Number(mail.trades_imported || 0),
         importJobsThisMonth: Number(mail.jobs_this_month || 0),
+        portfolioTypes: investByTypeRes.rows.length,
       },
       expenseByCategory: expenseByCategory.rows,
       cashFlowTrend: cashflowRes.rows.map((r) => ({
@@ -185,7 +197,9 @@ router.get(
         type: r.type,
         current: Number(r.current),
         invested: Number(r.invested),
+        count: Number(r.count || 0),
       })),
+      maturingSoon: maturingRes.rows,
       mailImport: {
         importedJobs: Number(mail.imported_jobs || 0),
         tradesImported: Number(mail.trades_imported || 0),
