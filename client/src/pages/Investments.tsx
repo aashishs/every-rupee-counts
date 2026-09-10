@@ -437,9 +437,6 @@ export function InvestmentsPage() {
             >
               Import contracts
             </Link>
-            <Button variant="secondary" onClick={loadDemoAssets} disabled={busy}>
-              {busy ? 'Loading…' : 'Load sample assets'}
-            </Button>
             <Button
               onClick={() => {
                 setEditing(null);
@@ -452,6 +449,20 @@ export function InvestmentsPage() {
           </div>
         }
       />
+
+      <Card className="mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-display text-base font-semibold">Sample multi-asset holdings</p>
+            <p className="text-sm text-[var(--color-ink-muted)]">
+              Add demo FD, RD, EPF, PPF, insurance, ULIP, property, gold, NPS, and bonds.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={loadDemoAssets} disabled={busy} className="shrink-0">
+            {busy ? 'Loading…' : 'Load sample assets'}
+          </Button>
+        </div>
+      </Card>
 
       {message ? <p className="mb-4 text-sm text-[var(--color-brand)]">{message}</p> : null}
 

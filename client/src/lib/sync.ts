@@ -8,47 +8,57 @@ export async function syncWithCloud(userSalt: string, token: string) {
   }
 
   const key = deriveKey(token.slice(0, 32) + userSalt, userSalt);
-  const local = await exportLocalSnapshot();
-  const localVersion = (await getMeta<number>('sync_version')) || local.version || 1;
 
   try {
-    const { data } = await api.get('/sync/latest');
-    const cloud = data.blob;
-
-    if (cloud) {
-      const cloudData = decryptPayload(cloud.encrypted_payload, cloud.iv, key);
-      // LWW merge: prefer newer updated_at per entity by client_id
-      const merged = mergeSnapshots(local, cloudData);
-      const nextVersion = Math.max(localVersion, cloud.version) + 1;
-      merged.version = nextVersion;
-      await importLocalSnapshot(merged);
-
-      const sealed = encryptPayload(merged, key);
-      await api.post('/sync/push', {
-        ...sealed,
-        version: nextVersion,
-        device_id: getDeviceId(),
-      });
-      await setMeta('sync_version', nextVersion);
-      await setMeta('last_sync_at', new Date().toISOString());
-      return { status: 'merged' as const, version: nextVersion };
-    }
-
-    const nextVersion = localVersion + 1;
-    local.version = nextVersion;
-    const sealed = encryptPayload(local, key);
-    await api.post('/sync/push', {
-      ...sealed,
-      version: nextVersion,
-      device_id: getDeviceId(),
-    });
-    await setMeta('sync_version', nextVersion);
-    await setMeta('last_sync_at', new Date().toISOString());
-    return { status: 'pushed' as const, version: nextVersion };
+    return await pushMerged(key);
   } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    // Version race: pull again, bump past cloud, retry once
+    if (status === 409) {
+      try {
+        return await pushMerged(key, true);
+      } catch (retryErr) {
+        console.error('Sync retry failed', retryErr);
+        return { status: 'error' as const, error: retryErr };
+      }
+    }
     console.error('Sync failed', err);
     return { status: 'error' as const, error: err };
   }
+}
+
+async function pushMerged(key: string, forceBump = false) {
+  const local = await exportLocalSnapshot();
+  const localVersion = (await getMeta<number>('sync_version')) || local.version || 1;
+  const { data } = await api.get('/sync/latest');
+  const cloud = data.blob;
+
+  let merged = local;
+  let baseVersion = localVersion;
+
+  if (cloud) {
+    const cloudData = decryptPayload(cloud.encrypted_payload, cloud.iv, key);
+    merged = mergeSnapshots(local, cloudData);
+    baseVersion = Math.max(localVersion, Number(cloud.version) || 0);
+  }
+
+  if (forceBump && cloud) {
+    baseVersion = Math.max(baseVersion, Number(cloud.version) || 0);
+  }
+
+  const nextVersion = baseVersion + 1;
+  merged.version = nextVersion;
+  await importLocalSnapshot(merged);
+
+  const sealed = encryptPayload(merged, key);
+  await api.post('/sync/push', {
+    ...sealed,
+    version: nextVersion,
+    device_id: getDeviceId(),
+  });
+  await setMeta('sync_version', nextVersion);
+  await setMeta('last_sync_at', new Date().toISOString());
+  return { status: cloud ? ('merged' as const) : ('pushed' as const), version: nextVersion };
 }
 
 function mergeByClientId<T extends { client_id?: string; id: string; updated_at: string; deleted_at?: string | null }>(

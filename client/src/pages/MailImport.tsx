@@ -307,13 +307,22 @@ export function MailImportPage() {
       <PageHeader
         title="Contract import"
         subtitle="Extract trades from Gmail/any email, or manually upload broker contract notes and MF CAS."
-        actions={
-          <Button variant="secondary" onClick={runDemo} disabled={!!busy}>
+      />
+
+      <Card className="mb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-display text-base font-semibold">Try it without mail</p>
+            <p className="text-sm text-[var(--color-ink-muted)]">
+              Load sample Zerodha contract note + CAMS CAS trades into your portfolio.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={runDemo} disabled={!!busy} className="shrink-0">
             <Sparkles size={16} />
             {busy === 'demo' ? 'Importing…' : 'Load demo trades'}
           </Button>
-        }
-      />
+        </div>
+      </Card>
 
       {message ? <p className="mb-4 text-sm text-[var(--color-brand)]">{message}</p> : null}
       {error ? <p className="mb-4 text-sm text-[var(--color-danger)]">{error}</p> : null}
