@@ -18,6 +18,7 @@ import syncRoutes from './routes/sync.js';
 import notificationRoutes from './routes/notifications.js';
 import categoryRoutes from './routes/categories.js';
 import loanRoutes from './routes/loans.js';
+import mailImportRoutes from './routes/mailImport.js';
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api/sync', syncRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/loans', loanRoutes);
+app.use('/api/mail-import', mailImportRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

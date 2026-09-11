@@ -14,6 +14,7 @@ import {
   CloudOff,
   Cloud,
   HandCoins,
+  Mail,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../store/auth';
@@ -25,6 +26,8 @@ const links = [
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/loans', label: 'Loans', icon: HandCoins },
   { to: '/investments', label: 'Investments', icon: TrendingUp },
+  { to: '/investments', label: 'Portfolio', icon: TrendingUp },
+  { to: '/mail-import', label: 'Contracts', icon: Mail },
   { to: '/assets', label: 'Assets', icon: Landmark },
   { to: '/cashflow', label: 'Cash Flow', icon: Wallet },
   { to: '/budgets', label: 'Budgets', icon: PieChart },
