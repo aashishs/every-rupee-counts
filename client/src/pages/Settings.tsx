@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../store/auth';
 import { Button, Card, Label, PageHeader, Select } from '../components/ui';
 
@@ -87,6 +88,20 @@ export function SettingsPage() {
       </div>
 
       {message ? <p className="mt-4 text-sm text-[var(--color-brand)]">{message}</p> : null}
+
+      <Card className="mt-6">
+        <h2 className="font-display text-lg font-semibold">Mail & broker import</h2>
+        <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
+          Pull stock contract notes and mutual fund CAS from Gmail or any IMAP inbox, or upload PDFs — holdings and
+          dashboard stats update automatically.
+        </p>
+        <Link
+          to="/mail-import"
+          className="mt-4 inline-flex rounded-xl bg-[var(--color-brand)] px-4 py-2.5 text-sm font-semibold text-white"
+        >
+          Open mail import
+        </Link>
+      </Card>
 
       <Card className="mt-6">
         <h2 className="font-display text-lg font-semibold">Architecture ready for</h2>

@@ -49,9 +49,10 @@ npm run docker:up    # full stack via Docker
 
 | Module | Capabilities |
 | --- | --- |
-| Dashboard | Balance, income/expense, net worth, health score, charts, upcoming payments |
+| Dashboard | Balance, income/expense, net worth, health score, charts, upcoming payments, mail-import stats |
 | Transactions | Expense & income CRUD, categories, tags, notes, search/filter, offline fallback |
-| Investments | Portfolio CRUD, live value updates, gain/loss, allocation chart, history |
+| Investments / Portfolio | Multi-asset tracker: stocks, MFs, FDs, RDs, EPF, PPF, NPS, insurance, ULIP, property, gold, bonds, PMS, AIF |
+| Mail import | Gmail/IMAP sync, contract note & MF CAS parsing, PDF/EML upload, paste import, portfolio auto-update |
 | Assets | Physical/digital assets with appreciation tracking |
 | Cash flow | Weekly / monthly / yearly income vs expense trends |
 | Budgets | Category budgets, utilization alerts, trend-based recommendations |
@@ -73,9 +74,17 @@ npm run docker:up    # full stack via Docker
 **Server (`server/.env`)**
 
 - `DATABASE_URL` – Postgres connection string
-- `JWT_SECRET` – change in production
+- `JWT_SECRET` – change in production (also used to encrypt stored IMAP passwords)
 - `CLIENT_URL` – CORS origin (default `http://localhost:5173`)
 - `PORT` – default `5000`
+
+### Mail import (MyProfit-style)
+
+1. Open **Mail import** in the app.
+2. Connect **Gmail** with an [App Password](https://support.google.com/accounts/answer/185833) (or any IMAP provider).
+3. Click **Sync** to scan for broker contract notes and mutual fund CAS / SIP mails.
+4. Or **upload** PDF/HTML/EML/CSV files, **paste** statement text, or use **Load demo trades**.
+5. Parsed buy/sell/SIP trades update **Investments** and appear on the **Dashboard**.
 
 **Client (`client/.env`)**
 

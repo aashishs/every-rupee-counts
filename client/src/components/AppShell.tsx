@@ -13,6 +13,7 @@ import {
   X,
   CloudOff,
   Cloud,
+  Mail,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../store/auth';
@@ -22,7 +23,8 @@ import { Button } from './ui';
 const links = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
-  { to: '/investments', label: 'Investments', icon: TrendingUp },
+  { to: '/investments', label: 'Portfolio', icon: TrendingUp },
+  { to: '/mail-import', label: 'Contracts', icon: Mail },
   { to: '/assets', label: 'Assets', icon: Landmark },
   { to: '/cashflow', label: 'Cash Flow', icon: Wallet },
   { to: '/budgets', label: 'Budgets', icon: PieChart },
