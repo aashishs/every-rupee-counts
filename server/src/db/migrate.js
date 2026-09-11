@@ -156,6 +156,45 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   UNIQUE(user_id, endpoint)
 );
 
+CREATE TABLE IF NOT EXISTS loans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  lender VARCHAR(255),
+  loan_type VARCHAR(100) NOT NULL DEFAULT 'Personal',
+  principal NUMERIC(14, 2) NOT NULL CHECK (principal >= 0),
+  interest_rate NUMERIC(8, 4) NOT NULL CHECK (interest_rate >= 0),
+  tenure_months INTEGER NOT NULL CHECK (tenure_months > 0),
+  emi NUMERIC(14, 2),
+  start_date DATE NOT NULL,
+  foreclosure_charge_percent NUMERIC(8, 4) DEFAULT 0,
+  notes TEXT,
+  status VARCHAR(30) DEFAULT 'active' CHECK (status IN ('active', 'closed', 'paused')),
+  client_id UUID,
+  synced_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS loan_prepayments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  strategy VARCHAR(30) NOT NULL DEFAULT 'reduce_tenure'
+    CHECK (strategy IN ('reduce_tenure', 'reduce_emi', 'hybrid')),
+  new_emi NUMERIC(14, 2),
+  notes TEXT,
+  outstanding_before NUMERIC(14, 2),
+  outstanding_after NUMERIC(14, 2),
+  months_saved INTEGER,
+  interest_saved NUMERIC(14, 2),
+  client_id UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_investments_user ON investments(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_assets_user ON assets(user_id) WHERE deleted_at IS NULL;
@@ -163,6 +202,8 @@ CREATE INDEX IF NOT EXISTS idx_budgets_user_month ON budgets(user_id, month);
 CREATE INDEX IF NOT EXISTS idx_recurring_user_due ON recurring_transactions(user_id, next_due_date) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_blobs_user ON sync_blobs(user_id, version DESC);
+CREATE INDEX IF NOT EXISTS idx_loans_user ON loans(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_loan_prepayments_loan ON loan_prepayments(loan_id, date);
 `;
 
 const defaultCategories = [
@@ -197,9 +238,10 @@ export async function migrate() {
     for (const [name, type, icon, color] of defaultCategories) {
       await client.query(
         `INSERT INTO categories (user_id, name, type, icon, color, is_system)
-         SELECT NULL, $1, $2, $3, $4, TRUE
+         SELECT NULL, $1::varchar, $2::varchar, $3::varchar, $4::varchar, TRUE
          WHERE NOT EXISTS (
-           SELECT 1 FROM categories WHERE name = $1 AND type = $2 AND is_system = TRUE
+           SELECT 1 FROM categories
+           WHERE name = $1::varchar AND type = $2::varchar AND is_system = TRUE
          )`,
         [name, type, icon, color]
       );

@@ -30,6 +30,8 @@ interface DashboardData {
     investmentGain: number;
     totalAssets: number;
     netWorth: number;
+    loanOutstanding?: number;
+    loanEmiMonthly?: number;
     financialHealthScore: number;
     accountBalance: number;
   };
@@ -50,6 +52,14 @@ interface DashboardData {
     amount: string;
     date: string;
     description?: string;
+  }>;
+  loans?: Array<{
+    id: string;
+    name: string;
+    outstanding: number;
+    emi: number;
+    closingDate: string | null;
+    remainingMonths: number;
   }>;
 }
 
@@ -109,6 +119,7 @@ export function DashboardPage() {
         <Stat label="Budget used" value={`${o.budgetUtilization.toFixed(0)}%`} />
         <Stat label="Investments" value={formatINR(o.investmentPortfolio)} hint={`Gain ${formatINR(o.investmentGain)}`} />
         <Stat label="Assets" value={formatINR(o.totalAssets)} />
+        <Stat label="Loan outstanding" value={formatINR(o.loanOutstanding || 0)} tone="negative" hint={o.loanEmiMonthly ? `EMI ${formatINR(o.loanEmiMonthly)}/mo` : undefined} />
         <Stat label="Net worth" value={formatINR(o.netWorth)} />
         <Stat label="Cash flow" value={formatINR(o.cashFlow)} tone={o.cashFlow >= 0 ? 'positive' : 'negative'} />
       </div>

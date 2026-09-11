@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../db/pool.js';
 import { authenticate } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/error.js';
+import { summarizeLoan } from '../services/loanMath.js';
 
 const router = Router();
 router.use(authenticate);
@@ -22,7 +23,7 @@ router.get(
     const { start, end } = monthBounds(0);
     const userId = req.user.id;
 
-    const [incomeRes, expenseRes, investRes, assetRes, recentRes, recurringRes, budgetsRes, cashflowRes] =
+    const [incomeRes, expenseRes, investRes, assetRes, recentRes, recurringRes, budgetsRes, cashflowRes, loansRes] =
       await Promise.all([
         query(
           `SELECT COALESCE(SUM(amount),0) AS total FROM transactions
@@ -83,6 +84,10 @@ router.get(
            ORDER BY period ASC`,
           [userId]
         ),
+        query(
+          `SELECT * FROM loans WHERE user_id=$1 AND deleted_at IS NULL AND status != 'closed'`,
+          [userId]
+        ),
       ]);
 
     const monthlyIncome = Number(incomeRes.rows[0].total);
@@ -91,7 +96,29 @@ router.get(
     const investmentValue = Number(investRes.rows[0].current);
     const investedAmount = Number(investRes.rows[0].invested);
     const assetValue = Number(assetRes.rows[0].current);
-    const netWorth = investmentValue + assetValue;
+
+    let loanOutstanding = 0;
+    let loanEmi = 0;
+    const loanSummaries = [];
+    for (const loan of loansRes.rows) {
+      const prepays = await query(
+        `SELECT * FROM loan_prepayments WHERE loan_id=$1 AND user_id=$2 ORDER BY date ASC`,
+        [loan.id, userId]
+      );
+      const summary = summarizeLoan(loan, prepays.rows);
+      loanOutstanding += summary.outstanding;
+      loanEmi += summary.emi;
+      loanSummaries.push({
+        id: loan.id,
+        name: loan.name,
+        outstanding: summary.outstanding,
+        emi: summary.emi,
+        closingDate: summary.closingDate,
+        remainingMonths: summary.remainingMonths,
+      });
+    }
+
+    const netWorth = investmentValue + assetValue - loanOutstanding;
 
     const expenseByCategory = await query(
       `SELECT category, SUM(amount) AS total
@@ -128,6 +155,8 @@ router.get(
         investmentGain: investmentValue - investedAmount,
         totalAssets: assetValue,
         netWorth,
+        loanOutstanding,
+        loanEmiMonthly: loanEmi,
         financialHealthScore: health,
         accountBalance: netSavings, // simplified current-month balance proxy
       },
@@ -141,6 +170,7 @@ router.get(
       budgets: budgetsRes.rows,
       upcomingPayments: recurringRes.rows,
       recentTransactions: recentRes.rows,
+      loans: loanSummaries,
     });
   })
 );
