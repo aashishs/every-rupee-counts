@@ -17,6 +17,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import syncRoutes from './routes/sync.js';
 import notificationRoutes from './routes/notifications.js';
 import categoryRoutes from './routes/categories.js';
+import loanRoutes from './routes/loans.js';
 import mailImportRoutes from './routes/mailImport.js';
 import loanRoutes from './routes/loans.js';
 
@@ -55,6 +56,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/loans', loanRoutes);
 app.use('/api/mail-import', mailImportRoutes);
 app.use('/api/loans', loanRoutes);
 

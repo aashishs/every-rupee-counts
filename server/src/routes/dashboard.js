@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../db/pool.js';
 import { authenticate } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/error.js';
+import { summarizeLoan } from '../services/loanMath.js';
 
 const router = Router();
 router.use(authenticate);
@@ -136,7 +137,29 @@ router.get(
     const investmentValue = Number(investRes.rows[0].current);
     const investedAmount = Number(investRes.rows[0].invested);
     const assetValue = Number(assetRes.rows[0].current);
-    const netWorth = investmentValue + assetValue;
+
+    let loanOutstanding = 0;
+    let loanEmi = 0;
+    const loanSummaries = [];
+    for (const loan of loansRes.rows) {
+      const prepays = await query(
+        `SELECT * FROM loan_prepayments WHERE loan_id=$1 AND user_id=$2 ORDER BY date ASC`,
+        [loan.id, userId]
+      );
+      const summary = summarizeLoan(loan, prepays.rows);
+      loanOutstanding += summary.outstanding;
+      loanEmi += summary.emi;
+      loanSummaries.push({
+        id: loan.id,
+        name: loan.name,
+        outstanding: summary.outstanding,
+        emi: summary.emi,
+        closingDate: summary.closingDate,
+        remainingMonths: summary.remainingMonths,
+      });
+    }
+
+    const netWorth = investmentValue + assetValue - loanOutstanding;
 
     const expenseByCategory = await query(
       `SELECT category, SUM(amount) AS total
@@ -175,6 +198,8 @@ router.get(
         investmentGain: investmentValue - investedAmount,
         totalAssets: assetValue,
         netWorth,
+        loanOutstanding,
+        loanEmiMonthly: loanEmi,
         financialHealthScore: health,
         accountBalance: netSavings, // simplified current-month balance proxy
         emailHoldings: Number(investRes.rows[0].email_holdings || 0),

@@ -52,6 +52,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="transactions" element={<TransactionsPage />} />
+          <Route path="loans" element={<LoansPage />} />
           <Route path="investments" element={<InvestmentsPage />} />
           <Route path="loans" element={<LoansPage />} />
           <Route path="mail-import" element={<MailImportPage />} />

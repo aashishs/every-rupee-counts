@@ -13,6 +13,7 @@ import {
   X,
   CloudOff,
   Cloud,
+  HandCoins,
   Mail,
   CreditCard,
 } from 'lucide-react';
@@ -24,6 +25,8 @@ import { Button } from './ui';
 const links = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { to: '/loans', label: 'Loans', icon: HandCoins },
+  { to: '/investments', label: 'Investments', icon: TrendingUp },
   { to: '/investments', label: 'Portfolio', icon: TrendingUp },
   { to: '/loans', label: 'Loans', icon: CreditCard },
   { to: '/mail-import', label: 'Contracts', icon: Mail },
