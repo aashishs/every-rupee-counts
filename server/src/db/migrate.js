@@ -163,6 +163,30 @@ CREATE TABLE IF NOT EXISTS assets (
   deleted_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS loans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  loan_type VARCHAR(100) NOT NULL,
+  lender VARCHAR(150),
+  account_no VARCHAR(100),
+  principal NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  outstanding NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  interest_rate NUMERIC(8, 4),
+  emi_amount NUMERIC(14, 2) DEFAULT 0,
+  tenure_months INTEGER,
+  start_date DATE,
+  end_date DATE,
+  next_due_date DATE,
+  status VARCHAR(40) DEFAULT 'active',
+  notes TEXT,
+  client_id UUID,
+  synced_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS budgets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -274,6 +298,7 @@ CREATE TABLE IF NOT EXISTS loan_prepayments (
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_investments_user ON investments(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_assets_user ON assets(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_loans_user ON loans(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_budgets_user_month ON budgets(user_id, month);
 CREATE INDEX IF NOT EXISTS idx_recurring_user_due ON recurring_transactions(user_id, next_due_date) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);

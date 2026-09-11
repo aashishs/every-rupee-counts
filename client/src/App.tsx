@@ -14,6 +14,7 @@ import { ReportsPage } from './pages/Reports';
 import { NotificationsPage } from './pages/Notifications';
 import { SettingsPage } from './pages/Settings';
 import { MailImportPage } from './pages/MailImport';
+import { LoansPage } from './pages/Loans';
 
 function Protected({ children }: { children: ReactNode }) {
   const { token, loading } = useAuth();
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="transactions" element={<TransactionsPage />} />
           <Route path="loans" element={<LoansPage />} />
           <Route path="investments" element={<InvestmentsPage />} />
+          <Route path="loans" element={<LoansPage />} />
           <Route path="mail-import" element={<MailImportPage />} />
           <Route path="assets" element={<AssetsPage />} />
           <Route path="cashflow" element={<CashFlowPage />} />
