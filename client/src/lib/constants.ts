@@ -43,21 +43,10 @@ export const LOAN_TYPES = [
   'Credit Card',
   'Loan Against Property',
   'Other Loan',
+  'Credit Card EMI'
 ] as const;
 
 export const FREQUENCIES = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'] as const;
-
-export const LOAN_TYPES = [
-  'Home Loan',
-  'Personal Loan',
-  'Car Loan',
-  'Education Loan',
-  'Gold Loan',
-  'Business Loan',
-  'Loan Against Property',
-  'Credit Card EMI',
-  'Other',
-] as const;
 
 export const PREPAY_STRATEGIES = [
   {
