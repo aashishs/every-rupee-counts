@@ -32,6 +32,19 @@ export const ASSET_CATEGORIES = [
   'House', 'Land', 'Vehicle', 'Gold', 'Jewellery', 'Electronics', 'Furniture', 'Collectibles', 'Other',
 ] as const;
 
+export const LOAN_TYPES = [
+  'Home Loan',
+  'Personal Loan',
+  'Car Loan',
+  'Two Wheeler Loan',
+  'Education Loan',
+  'Gold Loan',
+  'Business Loan',
+  'Credit Card',
+  'Loan Against Property',
+  'Other Loan',
+] as const;
+
 export const FREQUENCIES = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'] as const;
 
 export type PortfolioFieldKey =
